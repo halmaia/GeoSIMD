@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.9.34526.213
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "GeoSIMD", "GeoSIMD.csproj", "{77264C6B-BB55-4291-81A6-E4107BE57A9B}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{77264C6B-BB55-4291-81A6-E4107BE57A9B}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{77264C6B-BB55-4291-81A6-E4107BE57A9B}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{77264C6B-BB55-4291-81A6-E4107BE57A9B}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{77264C6B-BB55-4291-81A6-E4107BE57A9B}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {54334025-D965-4B46-A394-EA867E6C8E6C}
+	EndGlobalSection
+EndGlobal
