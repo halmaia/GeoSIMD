@@ -28,7 +28,8 @@ namespace GeoSIMD
                 while (true)
                 {
                     (PI * Vector512.LoadUnsafe(in searchSpace, elementOffset) / C180)
-                            .StoreUnsafe(ref searchSpace, elementOffset);
+                                   .StoreUnsafe(ref searchSpace, elementOffset);
+
                     elementOffset += elementCountVector512;
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
@@ -40,11 +41,18 @@ namespace GeoSIMD
 
                 nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
 
+                // According to BenchmarkDotNet's measuremnt there is no
+                // measurable benefit to un-roll the while loop.
+
                 while (true)
                 {
                     (PI * Vector256.LoadUnsafe(in searchSpace, elementOffset) / C180)
-                            .StoreUnsafe(ref searchSpace, elementOffset);
+                                   .StoreUnsafe(ref searchSpace, elementOffset);
+
                     elementOffset += elementCountVector256;
+
+                    // If I rewrite this loop to a do ... while I get the same
+                    // compillation result as now:
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
             }
@@ -58,7 +66,8 @@ namespace GeoSIMD
                 while (true)
                 {
                     (PI * Vector128.LoadUnsafe(in searchSpace, elementOffset) / C180)
-                            .StoreUnsafe(ref searchSpace, elementOffset);
+                                   .StoreUnsafe(ref searchSpace, elementOffset);
+
                     elementOffset += elementCountVector128;
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
@@ -107,12 +116,11 @@ namespace GeoSIMD
                 Vector256<double> PI = Vector256.Create(double.Pi);
 
                 nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
-                while (true)
+                while (elementOffset <= oneVectorAwayFromEnd)
                 {
                     (PI * Vector256.LoadUnsafe(in inputSpace, elementOffset) / C180)
                             .StoreUnsafe(ref outputSpace, elementOffset);
                     elementOffset += elementCountVector256;
-                    if (elementOffset > oneVectorAwayFromEnd) break;
                 }
             }
             else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
@@ -125,6 +133,7 @@ namespace GeoSIMD
                 {
                     (PI * Vector128.LoadUnsafe(in inputSpace, elementOffset) / C180)
                             .StoreUnsafe(ref outputSpace, elementOffset);
+
                     elementOffset += elementCountVector128;
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
@@ -140,29 +149,3 @@ namespace GeoSIMD
         }
     }
 }
-
-// Unroll atempt (do not use):
-//if (bufferLength >= 4 * elementCountVector256)
-//{
-//    while (true)
-//    {
-//        nuint offset2 = elementOffset + elementCountVector256;
-//        nuint offset3 = elementOffset + 2 * elementCountVector256;
-//        nuint offset4 = elementOffset + 3 * elementCountVector256;
-
-//        (PI * Vector256.LoadUnsafe(in searchSpace, elementOffset) / C180)
-//                .StoreUnsafe(ref searchSpace, elementOffset);
-
-//        (PI * Vector256.LoadUnsafe(in searchSpace, offset2) / C180)
-//                .StoreUnsafe(ref searchSpace, offset2);
-
-//        (PI * Vector256.LoadUnsafe(in searchSpace, offset3) / C180)
-//                .StoreUnsafe(ref searchSpace, offset3);
-
-//        (PI * Vector256.LoadUnsafe(in searchSpace, offset4) / C180)
-//                .StoreUnsafe(ref searchSpace, offset4);
-
-//        elementOffset += 4*elementCountVector256;
-//        if (elementOffset > oneVectorAwayFromEnd) break;
-//    }
-//}
