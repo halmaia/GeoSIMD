@@ -20,10 +20,10 @@ namespace GeoSIMD
 
             if (Vector512.IsHardwareAccelerated && bufferLength >= elementCountVector512)
             {
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
+                
                 Vector512<double> C180 = Vector512.Create(180.0d);
                 Vector512<double> PI = Vector512.Create(double.Pi);
-
-                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
 
                 while (true)
                 {
@@ -36,10 +36,10 @@ namespace GeoSIMD
             }
             else if (Vector256.IsHardwareAccelerated && bufferLength >= elementCountVector256)
             {
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
+
                 Vector256<double> C180 = Vector256.Create(180.0d);
                 Vector256<double> PI = Vector256.Create(double.Pi);
-
-                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
 
                 // According to BenchmarkDotNet's measuremnt there is no
                 // measurable benefit to un-roll the while loop.
@@ -58,10 +58,10 @@ namespace GeoSIMD
             }
             else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
             {
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
+
                 Vector128<double> C180 = Vector128.Create(180.0d);
                 Vector128<double> PI = Vector128.Create(double.Pi);
-
-                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
 
                 while (true)
                 {
