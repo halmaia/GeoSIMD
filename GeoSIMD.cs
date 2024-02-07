@@ -147,5 +147,115 @@ namespace GeoSIMD
             }
             return output;
         }
+
+           public static double GetArea(ReadOnlySpan<double> x, ReadOnlySpan<double> y, out bool positiveDirection)
+   {
+       nuint bufferLength = (nuint)x.Length;
+       if (bufferLength < 4 || bufferLength != (nuint)y.Length)
+           throw new IndexOutOfRangeException("Invalid vertex count.");
+
+       const nuint elementCountVector512 = 8u;
+       const nuint elementCountVector256 = 4u;
+       const nuint elementCountVector128 = 2u;
+
+       nuint elementOffset = 0u;
+       double vectorSum = 0d;
+
+       ref readonly double searchSpaceX = ref x.GetPinnableReference();
+       ref readonly double searchSpaceY = ref y.GetPinnableReference();
+       
+       if (Vector512.IsHardwareAccelerated && bufferLength >= 2u * elementCountVector512 + 1u)
+       {
+           Vector512<double> sum512 = Vector512<double>.Zero;
+           nuint oneVectorAwayFromEnd = bufferLength - (elementCountVector512 + 1u);
+           while (true)
+           {
+               if (Avx512F.IsSupported)
+               {
+                   sum512 = Avx512F.FusedMultiplyAdd(Vector512.LoadUnsafe(in searchSpaceX, elementOffset),
+                                            Vector512.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
+                                            Avx512F.FusedMultiplyAddNegated(Vector512.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
+                                                                   Vector512.LoadUnsafe(in searchSpaceY, elementOffset),
+                                                                   sum512));
+               }
+               else
+               {
+                   sum512 += Vector512.LoadUnsafe(in searchSpaceX, elementOffset) *
+                   Vector512.LoadUnsafe(in searchSpaceY, 1 + elementOffset) -
+                   Vector512.LoadUnsafe(in searchSpaceX, 1 + elementOffset) *
+                   Vector512.LoadUnsafe(in searchSpaceY, elementOffset);
+               }
+               elementOffset += elementCountVector512;
+               if (elementOffset > oneVectorAwayFromEnd) break;
+           }
+           vectorSum = Vector512.Sum(.5d * sum512);
+       }
+
+       else if (Vector256.IsHardwareAccelerated && bufferLength >= 2u * elementCountVector256 + 1u)
+       {
+           Vector256<double> sum256 = Vector256<double>.Zero;
+           nuint oneVectorAwayFromEnd = bufferLength - (elementCountVector256 + 1u);
+           while (true)
+           {
+               if (Fma.IsSupported)
+               {
+                   sum256 = Fma.MultiplyAdd(Vector256.LoadUnsafe(in searchSpaceX, elementOffset),
+                                            Vector256.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
+                                            Fma.MultiplyAddNegated(Vector256.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
+                                                                   Vector256.LoadUnsafe(in searchSpaceY, elementOffset),
+                                                                   sum256));
+               }
+               else
+               {
+                   sum256 += Vector256.LoadUnsafe(in searchSpaceX, elementOffset) *
+                   Vector256.LoadUnsafe(in searchSpaceY, 1 + elementOffset) -
+                   Vector256.LoadUnsafe(in searchSpaceX, 1 + elementOffset) *
+                   Vector256.LoadUnsafe(in searchSpaceY, elementOffset);
+               }
+               elementOffset += elementCountVector256;
+               if (elementOffset > oneVectorAwayFromEnd) break;
+           }
+           vectorSum = Vector256.Sum(.5d * sum256);
+       }
+       else if (Vector128.IsHardwareAccelerated && bufferLength >= 2u * elementCountVector128 + 1)
+       {
+           Vector128<double> sum128 = Vector128<double>.Zero;
+           nuint oneVectorAwayFromEnd = bufferLength - (elementCountVector128 + 1u);
+           while (true)
+           {
+               if (Fma.IsSupported)
+               {
+                   sum128 = Fma.MultiplyAdd(Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
+                                            Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
+                                            Fma.MultiplyAddNegated(Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
+                                                                   Vector128.LoadUnsafe(in searchSpaceY, elementOffset),
+                                                                   sum128));
+               }
+               else
+               {
+                   sum128 += Vector128.LoadUnsafe(in searchSpaceX, elementOffset) *
+                   Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset) -
+                   Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset) *
+                   Vector128.LoadUnsafe(in searchSpaceY, elementOffset);
+               }
+               elementOffset += elementCountVector128;
+               if (elementOffset > oneVectorAwayFromEnd) break;
+           }
+           vectorSum = Vector128.Sum(.5d * sum128);
+       }
+
+       double scalarSum = 0d;
+       int index = (int)elementOffset;
+       while (index < (int)(bufferLength - 1u))
+       {
+           scalarSum += x[index] * y[1 + index] - y[index++] * x[index];
+       }
+
+       var result = double.FusedMultiplyAdd(.5d, scalarSum, vectorSum);
+       positiveDirection = double.IsPositive(result);
+     
+       return double.Abs(result);
+   }
+
     }
 }
