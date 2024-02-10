@@ -43,7 +43,7 @@ namespace GeoSIMD
                 Vector256<double> C180 = Vector256.Create(180.0d);
                 Vector256<double> PI = Vector256.Create(double.Pi);
 
-                // According to BenchmarkDotNet's measuremnt there is no
+                // According to BenchmarkDotNet's measurement there is no
                 // measurable benefit to un-roll the while loop.
 
                 while (true)
@@ -54,7 +54,7 @@ namespace GeoSIMD
                     elementOffset += elementCountVector256;
 
                     // If I rewrite this loop to a do ... while I get the same
-                    // compillation result as now:
+                    // compilation result as now:
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
             }
@@ -150,7 +150,17 @@ namespace GeoSIMD
             return output;
         }
 
+        [SkipLocalsInit]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public static double GetArea(ReadOnlySpan<double> x, ReadOnlySpan<double> y, out bool positiveDirection)
+        {
+            double result = GetAreaInternal(x, y);
+            positiveDirection = double.IsPositive(result);
+            return double.Abs(result);
+        }
+
+        [SkipLocalsInit]
+        private static double GetAreaInternal(ReadOnlySpan<double> x, ReadOnlySpan<double> y)
         {
             nuint bufferLength = (nuint)x.Length;
             if (bufferLength < 4 || bufferLength != (nuint)y.Length)
@@ -201,7 +211,6 @@ namespace GeoSIMD
                 {
                     if (Fma.IsSupported)
                     {
-                        // TODO: Check on real hardware!
                         sum256 = Fma.MultiplyAdd(Vector256.LoadUnsafe(in searchSpaceX, elementOffset),
                                                  Vector256.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
                                                  Fma.MultiplyAddNegated(Vector256.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
@@ -228,20 +237,27 @@ namespace GeoSIMD
                 {
                     if (Fma.IsSupported)
                     {
+                        // Performs a set of SIMD negated multiply-add computation on packed single-precision
+                        // floating-point values using three source vectors/operands, a, b, and c.
+                        // Corresponding values in two operands, a and b, are multiplied and the negated
+                        // infinite precision intermediate results are added to the values in the third
+                        // operand, c, after which the final results are rounded to the nearest float32 values.
+                        // https://portal.nacad.ufrj.br/online/intel/compiler_c/common/core/GUID-8AD1C48E-E17D-46CC-AE7C-F7FB8EFD80DF.htm
                         sum128 = Fma.MultiplyAdd(Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
                                                  Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
                                                  Fma.MultiplyAddNegated(Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
                                                                         Vector128.LoadUnsafe(in searchSpaceY, elementOffset),
                                                                         sum128));
                     }
-                    else if (AdvSimd.Arm64.IsSupported)
-                    {
-                        sum128 = AdvSimd.Arm64.FusedMultiplyAdd(AdvSimd.Arm64.FusedMultiplyAdd(sum128,
-                                                                              -Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
-                                                                              Vector128.LoadUnsafe(in searchSpaceY, elementOffset)),
-                                                                Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
-                                                                Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset));
-                    }
+                    // TODO: Check on real hardware!
+                    //else if (AdvSimd.Arm64.IsSupported)
+                    //{
+                    //    sum128 = AdvSimd.Arm64.FusedMultiplyAdd(AdvSimd.Arm64.FusedMultiplyAdd(sum128,
+                    //                                   -Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
+                    //                                   Vector128.LoadUnsafe(in searchSpaceY, elementOffset)),
+                    //                     Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
+                    //                     Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset));
+                    //}
                     else
                     {
                         sum128 += Vector128.LoadUnsafe(in searchSpaceX, elementOffset) *
@@ -263,11 +279,43 @@ namespace GeoSIMD
                 scalarSum += x[index] * y[1 + index] - y[index++] * x[index];
             }
 
-            var result = double.FusedMultiplyAdd(.5d, scalarSum, vectorSum);
-            positiveDirection = double.IsPositive(result);
-
-            return double.Abs(result);
+            return double.FusedMultiplyAdd(.5d, scalarSum, vectorSum);
         }
 
+        [SkipLocalsInit]
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
+        public static bool IsClosed(ReadOnlySpan<double> x, ReadOnlySpan<double> y)
+        {
+            int len = x.Length;
+            if (len != y.Length)
+                throw new IndexOutOfRangeException("Asymmetric vertex count.");
+            if (len < 3)
+                throw new ArgumentException("There is no enough vertex to be tested.");
+
+            return (x[--len] == x[0]) && (y[len] == y[0]);
+        }
+
+        [SkipLocalsInit]
+        public static void ClosePolygon(ref Span<double> x, ref Span<double> y)
+        {
+            if (!IsClosed(x, y))
+            {
+                int len = x.Length;
+                // If we already on the maximum size, unable to increase:
+                if (len == Array.MaxLength)
+                    throw new IndexOutOfRangeException("The number of elements is too big, to allocate a new element.");
+                
+                Span<double> new_x = GC.AllocateUninitializedArray<double>(++len);
+                x.CopyTo(new_x);
+                x = new_x;
+
+                Span<double> new_y = GC.AllocateUninitializedArray<double>(len);
+                x.CopyTo(new_y);
+                y = new_y;
+
+                x[--len] = x[0];
+                y[len] = y[0];
+            }
+        }
     }
 }
