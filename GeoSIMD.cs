@@ -1,7 +1,6 @@
 ﻿using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
-using System.Runtime.Intrinsics.Arm;
 using System.Runtime.Intrinsics.X86;
 
 namespace GeoSIMD
@@ -93,6 +92,7 @@ namespace GeoSIMD
             nuint elementOffset = 0u;
 
             ref readonly double inputSpace = ref radians.GetPinnableReference();
+
             nuint bufferLength = (nuint)radians.Length;
             Span<double> output = GC.AllocateUninitializedArray<double>(radians.Length);
             ref double outputSpace = ref MemoryMarshal.GetReference(output);
@@ -152,8 +152,11 @@ namespace GeoSIMD
 
         [SkipLocalsInit]
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public static double GetArea(ReadOnlySpan<double> x, ReadOnlySpan<double> y, out bool positiveDirection)
+        public static double GetArea(ReadOnlySpan<double> x, ReadOnlySpan<double> y, out bool positiveDirection, bool noCheck = false)
         {
+            if (!noCheck && !IsClosed(x, y))
+                throw new Exception("The provided polygon is not closed.");
+
             double result = GetAreaInternal(x, y);
             positiveDirection = double.IsPositive(result);
             return double.Abs(result);
@@ -178,21 +181,21 @@ namespace GeoSIMD
 
             if (Vector512.IsHardwareAccelerated && bufferLength >= 2u * elementCountVector512 + 1u)
             {
-                Vector512<double> sum512 = Vector512<double>.Zero;
+                Vector512<double> area512 = Vector512<double>.Zero;
                 nuint oneVectorAwayFromEnd = bufferLength - (elementCountVector512 + 1u);
                 while (true)
                 {
                     if (Avx512F.IsSupported)
                     {
-                        sum512 = Avx512F.FusedMultiplyAdd(Vector512.LoadUnsafe(in searchSpaceX, elementOffset),
+                        area512 = Avx512F.FusedMultiplyAdd(Vector512.LoadUnsafe(in searchSpaceX, elementOffset),
                                                  Vector512.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
                                                  Avx512F.FusedMultiplyAddNegated(Vector512.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
                                                                         Vector512.LoadUnsafe(in searchSpaceY, elementOffset),
-                                                                        sum512));
+                                                                        area512));
                     }
                     else
                     {
-                        sum512 += Vector512.LoadUnsafe(in searchSpaceX, elementOffset) *
+                        area512 += Vector512.LoadUnsafe(in searchSpaceX, elementOffset) *
                         Vector512.LoadUnsafe(in searchSpaceY, 1 + elementOffset) -
                         Vector512.LoadUnsafe(in searchSpaceX, 1 + elementOffset) *
                         Vector512.LoadUnsafe(in searchSpaceY, elementOffset);
@@ -200,26 +203,26 @@ namespace GeoSIMD
                     elementOffset += elementCountVector512;
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
-                vectorSum = Vector512.Sum(.5d * sum512);
+                vectorSum = Vector512.Sum(.5d * area512);
             }
 
             else if (Vector256.IsHardwareAccelerated && bufferLength >= 2u * elementCountVector256 + 1u)
             {
-                Vector256<double> sum256 = Vector256<double>.Zero;
+                Vector256<double> area256 = Vector256<double>.Zero;
                 nuint oneVectorAwayFromEnd = bufferLength - (elementCountVector256 + 1u);
                 while (true)
                 {
                     if (Fma.IsSupported)
                     {
-                        sum256 = Fma.MultiplyAdd(Vector256.LoadUnsafe(in searchSpaceX, elementOffset),
+                        area256 = Fma.MultiplyAdd(Vector256.LoadUnsafe(in searchSpaceX, elementOffset),
                                                  Vector256.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
                                                  Fma.MultiplyAddNegated(Vector256.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
                                                                         Vector256.LoadUnsafe(in searchSpaceY, elementOffset),
-                                                                        sum256));
+                                                                        area256));
                     }
                     else
                     {
-                        sum256 += Vector256.LoadUnsafe(in searchSpaceX, elementOffset) *
+                        area256 += Vector256.LoadUnsafe(in searchSpaceX, elementOffset) *
                         Vector256.LoadUnsafe(in searchSpaceY, 1 + elementOffset) -
                         Vector256.LoadUnsafe(in searchSpaceX, 1 + elementOffset) *
                         Vector256.LoadUnsafe(in searchSpaceY, elementOffset);
@@ -227,32 +230,33 @@ namespace GeoSIMD
                     elementOffset += elementCountVector256;
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
-                vectorSum = Vector256.Sum(.5d * sum256);
+                vectorSum = Vector256.Sum(.5d * area256);
             }
             else if (Vector128.IsHardwareAccelerated && bufferLength >= 2u * elementCountVector128 + 1)
             {
-                Vector128<double> sum128 = Vector128<double>.Zero;
+                Vector128<double> area128 = Vector128<double>.Zero;
                 nuint oneVectorAwayFromEnd = bufferLength - (elementCountVector128 + 1u);
                 while (true)
                 {
                     if (Fma.IsSupported)
                     {
-                        // Performs a set of SIMD negated multiply-add computation on packed single-precision
+                        // FusedMultiplyAddNegated:
+                        // "Performs a set of SIMD negated multiply-add computation on packed single-precision
                         // floating-point values using three source vectors/operands, a, b, and c.
                         // Corresponding values in two operands, a and b, are multiplied and the negated
                         // infinite precision intermediate results are added to the values in the third
-                        // operand, c, after which the final results are rounded to the nearest float32 values.
+                        // operand, c, after which the final results are rounded to the nearest float32 values."
                         // https://portal.nacad.ufrj.br/online/intel/compiler_c/common/core/GUID-8AD1C48E-E17D-46CC-AE7C-F7FB8EFD80DF.htm
-                        sum128 = Fma.MultiplyAdd(Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
+                        area128 = Fma.MultiplyAdd(Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
                                                  Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
                                                  Fma.MultiplyAddNegated(Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
                                                                         Vector128.LoadUnsafe(in searchSpaceY, elementOffset),
-                                                                        sum128));
+                                                                        area128));
                     }
                     // TODO: Check on real hardware!
                     //else if (AdvSimd.Arm64.IsSupported)
                     //{
-                    //    sum128 = AdvSimd.Arm64.FusedMultiplyAdd(AdvSimd.Arm64.FusedMultiplyAdd(sum128,
+                    //    area128 = AdvSimd.Arm64.FusedMultiplyAdd(AdvSimd.Arm64.FusedMultiplyAdd(sum128,
                     //                                   -Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
                     //                                   Vector128.LoadUnsafe(in searchSpaceY, elementOffset)),
                     //                     Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
@@ -260,7 +264,7 @@ namespace GeoSIMD
                     //}
                     else
                     {
-                        sum128 += Vector128.LoadUnsafe(in searchSpaceX, elementOffset) *
+                        area128 += Vector128.LoadUnsafe(in searchSpaceX, elementOffset) *
                         Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset) -
                         Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset) *
                         Vector128.LoadUnsafe(in searchSpaceY, elementOffset);
@@ -268,15 +272,15 @@ namespace GeoSIMD
                     elementOffset += elementCountVector128;
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
-                vectorSum = Vector128.Sum(.5d * sum128);
-
+                vectorSum = Vector128.Sum(.5d * area128);
             }
 
             double scalarSum = 0d;
-            int index = (int)elementOffset;
-            while (index < (int)(bufferLength - 1u))
+            int index = (int)elementOffset, oneUnitAwayFromEnd = (int)(bufferLength - 1u);
+            while (index < oneUnitAwayFromEnd)
             {
-                scalarSum += x[index] * y[1 + index] - y[index++] * x[index];
+                scalarSum = double.FusedMultiplyAdd(x[index], y[1 + index],
+                                                    double.FusedMultiplyAdd(-y[index++], x[index], scalarSum));
             }
 
             return double.FusedMultiplyAdd(.5d, scalarSum, vectorSum);
@@ -287,18 +291,17 @@ namespace GeoSIMD
         public static bool IsClosed(ReadOnlySpan<double> x, ReadOnlySpan<double> y)
         {
             int len = x.Length;
-            if (len != y.Length)
-                throw new IndexOutOfRangeException("Asymmetric vertex count.");
-            if (len < 3)
-                throw new ArgumentException("There is no enough vertex to be tested.");
-
-            return (x[--len] == x[0]) && (y[len] == y[0]);
+            return len != y.Length
+                ? throw new IndexOutOfRangeException("Asymmetric vertex count.")
+                : len < 3 ? throw new ArgumentException("There is no enough vertex to be closed.")
+                : (x[--len] == x[0]) && (y[len] == y[0]);
         }
 
         [SkipLocalsInit]
-        public static void ClosePolygon(ref Span<double> x, ref Span<double> y)
+        // x & y have to be 'ref'!
+        public static void ClosePolygon(ref Span<double> x, ref Span<double> y, bool noCheck = false)
         {
-            if (!IsClosed(x, y))
+            if (noCheck || !IsClosed(x, y))
             {
                 int len = x.Length;
                 // If we already on the maximum size, unable to increase:
