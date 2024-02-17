@@ -248,10 +248,10 @@ namespace GeoSIMD
                         // operand, c, after which the final results are rounded to the nearest float32 values."
                         // https://portal.nacad.ufrj.br/online/intel/compiler_c/common/core/GUID-8AD1C48E-E17D-46CC-AE7C-F7FB8EFD80DF.htm
                         area128 = Fma.MultiplyAdd(Vector128.LoadUnsafe(in searchSpaceX, elementOffset),
-                                                 Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
-                                                 Fma.MultiplyAddNegated(Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
-                                                                        Vector128.LoadUnsafe(in searchSpaceY, elementOffset),
-                                                                        area128));
+                                                  Vector128.LoadUnsafe(in searchSpaceY, 1 + elementOffset),
+                                                  Fma.MultiplyAddNegated(Vector128.LoadUnsafe(in searchSpaceX, 1 + elementOffset),
+                                                                         Vector128.LoadUnsafe(in searchSpaceY, elementOffset),
+                                                                         area128));
                     }
                     // TODO: Check on real hardware!
                     //else if (AdvSimd.Arm64.IsSupported)
@@ -307,7 +307,7 @@ namespace GeoSIMD
                 // If we already on the maximum size, unable to increase:
                 if (len == Array.MaxLength)
                     throw new IndexOutOfRangeException("The number of elements is too big, to allocate a new element.");
-                
+
                 Span<double> new_x = GC.AllocateUninitializedArray<double>(++len);
                 x.CopyTo(new_x);
                 x = new_x;
@@ -319,6 +319,203 @@ namespace GeoSIMD
                 x[--len] = x[0];
                 y[len] = y[0];
             }
+        }
+
+        public static double Min(ReadOnlySpan<double> buffer)
+        {
+            if (buffer.IsEmpty) throw new ArgumentException("Empty span provided.", nameof(buffer));
+
+            nuint bufferLength = (nuint)buffer.Length;
+            if (bufferLength is 1) return buffer[0];
+
+            const nuint elementCountVector512 = 8u;
+            const nuint elementCountVector256 = 4u;
+            const nuint elementCountVector128 = 2u;
+
+            // Vector512/256/128.IsHardwareAccelerated is a compilation time constant.
+            if (Vector512.IsHardwareAccelerated && bufferLength >= elementCountVector512)
+            {
+
+                ref readonly double searchSpace = ref buffer.GetPinnableReference();
+                Vector512<double> min512 = Vector512.LoadUnsafe(in searchSpace);
+                nuint elementOffset = elementCountVector512;
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
+
+                while (elementOffset <= oneVectorAwayFromEnd)
+                {
+                    min512 = Vector512.Min(min512, Vector512.LoadUnsafe(in searchSpace, elementOffset));
+                    elementOffset += elementCountVector512;
+                }
+
+                if (elementOffset < bufferLength)
+                {
+                    min512 = Vector512.Min(min512, Vector512.LoadUnsafe(in searchSpace, oneVectorAwayFromEnd));
+                }
+
+                Vector256<double> min256 = Vector256.Min(min512.GetLower(), min512.GetUpper());
+                Vector128<double> min128 = Vector128.Min(min256.GetLower(), min256.GetUpper());
+                double right = min128[1], left = min128[0];
+                return left < right ? left : right;
+
+            }
+            else if (Vector256.IsHardwareAccelerated && bufferLength >= elementCountVector256)
+            {
+                ref readonly double searchSpace = ref buffer.GetPinnableReference();
+                Vector256<double> min256 = Vector256.LoadUnsafe(in searchSpace);
+                nuint elementOffset = elementCountVector256;
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
+                while (elementOffset <= oneVectorAwayFromEnd)
+                {
+                    min256 = Vector256.Min(min256, Vector256.LoadUnsafe(in searchSpace, elementOffset));
+                    elementOffset += elementCountVector256;
+                }
+
+                if (elementOffset < bufferLength)
+                {
+                    min256 = Vector256.Min(min256, Vector256.LoadUnsafe(in searchSpace, oneVectorAwayFromEnd));
+                }
+
+                Vector128<double> min128 = Vector128.Min(min256.GetLower(), min256.GetUpper());
+                double right = min128[1], left = min128[0];
+                return left < right ? left : right;
+            }
+            else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
+            {
+                
+                ref readonly double searchSpace = ref buffer.GetPinnableReference();
+                Vector128<double> min128 = Vector128.LoadUnsafe(in searchSpace);
+                nuint elementOffset = elementCountVector128;
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
+                while (elementOffset <= oneVectorAwayFromEnd)
+                {
+                    min128 = Vector128.Min(min128, Vector128.LoadUnsafe(in searchSpace, elementOffset));
+                    elementOffset += elementCountVector128;
+                }
+
+                if (elementOffset < bufferLength)
+                {
+                    min128 = Vector128.Min(min128, Vector128.LoadUnsafe(in searchSpace, oneVectorAwayFromEnd));
+                }
+
+                double right = min128[1], left = min128[0];
+                return left < right ? left : right;
+            }
+
+            // Non-SIMD scalar handling:
+            double min = buffer[0];
+            for (int i = 1; i < (int)bufferLength;)
+            {
+                double current = buffer[i++];
+                if (min > current)
+                {
+                    min = current;
+                }
+            }
+            return min;
+        }
+
+        public static (double minX, double minY, double maxX, double maxY) Envelope(ReadOnlySpan<double> x, ReadOnlySpan<double> y)
+        {
+            nuint bufferLength = (nuint)x.Length;
+
+            const nuint elementCountVector512 = 8u;
+            const nuint elementCountVector256 = 4u;
+            const nuint elementCountVector128 = 2u;
+
+            // Vector512/256/128.IsHardwareAccelerated is a compilation time constant.
+            if (Vector512.IsHardwareAccelerated && bufferLength >= elementCountVector512)
+            {
+
+                ref readonly double searchSpaceX = ref x.GetPinnableReference();
+                ref readonly double searchSpaceY = ref y.GetPinnableReference();
+
+                Vector512<double> minX512 = Vector512.LoadUnsafe(in searchSpaceX);
+                Vector512<double> minY512 = Vector512.LoadUnsafe(in searchSpaceY);
+
+                Vector512<double> maxX512 = minX512;
+                Vector512<double> maxY512 = minY512;
+
+                nuint elementOffset = elementCountVector512;
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
+
+                while (elementOffset <= oneVectorAwayFromEnd)
+                {
+                    var currentX = Vector512.LoadUnsafe(in searchSpaceX, elementOffset);
+                    minX512 = Vector512.Min(minX512, currentX);
+                    maxX512 = Vector512.Max(maxX512, currentX);
+
+                    var currentY = Vector512.LoadUnsafe(in searchSpaceY, elementOffset);
+                    minY512 = Vector512.Min(minY512, currentY);
+                    maxY512 = Vector512.Max(maxY512, currentY);
+
+                    elementOffset += elementCountVector512;
+                }
+
+                if (elementOffset < bufferLength)
+                {
+                    minX512 = Vector512.Min(minX512, Vector512.LoadUnsafe(in searchSpaceX, oneVectorAwayFromEnd));
+                }
+
+                Vector256<double> min256 = Vector256.Min(minX512.GetLower(), minX512.GetUpper());
+                Vector128<double> min128 = Vector128.Min(min256.GetLower(), min256.GetUpper());
+                double right = min128[1], left = min128[0];
+                return left < right ? left : right;
+
+            }
+            else if (Vector256.IsHardwareAccelerated && bufferLength >= elementCountVector256)
+            {
+                ref readonly double searchSpace = ref x.GetPinnableReference();
+                Vector256<double> min256 = Vector256.LoadUnsafe(in searchSpace);
+                nuint elementOffset = elementCountVector256;
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
+                while (elementOffset <= oneVectorAwayFromEnd)
+                {
+                    min256 = Vector256.Min(min256, Vector256.LoadUnsafe(in searchSpace, elementOffset));
+                    elementOffset += elementCountVector256;
+                }
+
+                if (elementOffset < bufferLength)
+                {
+                    min256 = Vector256.Min(min256, Vector256.LoadUnsafe(in searchSpace, oneVectorAwayFromEnd));
+                }
+
+                Vector128<double> min128 = Vector128.Min(min256.GetLower(), min256.GetUpper());
+                double right = min128[1], left = min128[0];
+                return left < right ? left : right;
+            }
+            else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
+            {
+
+                ref readonly double searchSpace = ref x.GetPinnableReference();
+                Vector128<double> min128 = Vector128.LoadUnsafe(in searchSpace);
+                nuint elementOffset = elementCountVector128;
+                nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
+                while (elementOffset <= oneVectorAwayFromEnd)
+                {
+                    min128 = Vector128.Min(min128, Vector128.LoadUnsafe(in searchSpace, elementOffset));
+                    elementOffset += elementCountVector128;
+                }
+
+                if (elementOffset < bufferLength)
+                {
+                    min128 = Vector128.Min(min128, Vector128.LoadUnsafe(in searchSpace, oneVectorAwayFromEnd));
+                }
+
+                double right = min128[1], left = min128[0];
+                return left < right ? left : right;
+            }
+
+            // Non-SIMD scalar handling:
+            double min = x[0];
+            for (int i = 1; i < (int)bufferLength;)
+            {
+                double current = x[i++];
+                if (min > current)
+                {
+                    min = current;
+                }
+            }
+            return min;
         }
     }
 }
