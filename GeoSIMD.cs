@@ -381,7 +381,7 @@ namespace GeoSIMD
             }
             else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
             {
-                
+
                 ref readonly double searchSpace = ref buffer.GetPinnableReference();
                 Vector128<double> min128 = Vector128.LoadUnsafe(in searchSpace);
                 nuint elementOffset = elementCountVector128;
@@ -545,11 +545,12 @@ namespace GeoSIMD
             nuint bufferLength = (nuint)lon.Length;
 
             ref double lon_searchSpace = ref MemoryMarshal.GetReference(lon);
+            ref double lat_searchSpace = ref MemoryMarshal.GetReference(lat);
 
             if (Vector512.IsHardwareAccelerated && bufferLength >= elementCountVector512)
             {
-              
-                
+
+
             }
             else if (Vector256.IsHardwareAccelerated && bufferLength >= elementCountVector256)
             {
@@ -575,7 +576,7 @@ namespace GeoSIMD
 
                 while (true)
                 {
-                    Vector256<double> _lat = Vector256.LoadUnsafe(in lon_searchSpace, elementOffset);
+                    Vector256<double> _lat = Vector256.LoadUnsafe(in lat_searchSpace, elementOffset);
                     _lat = v_degToRad * Vector256.Min(v_maxLat, Vector256.Max(v_minLat, _lat));
                     Vector256<double> _lat2 = _lat * _lat;
 
@@ -596,23 +597,28 @@ namespace GeoSIMD
                     (v_s5 + _lat2 * (v_s6 + v_s7 * _lat2)))))) + v_one;
 
                     (v_WGS84_HalfSemiMajorAxis * Vector256.Log(_lat / (v_two - _lat)))
-                      .StoreUnsafe(ref lon_searchSpace, elementOffset);
+                      .StoreUnsafe(ref lat_searchSpace, elementOffset);
 
+                    (v_WGS84_SemiMajorAxis * (v_degToRad* Vector256.LoadUnsafe(in lon_searchSpace, elementOffset)))
+                        .StoreUnsafe(ref lon_searchSpace, elementOffset);
+                    
                     elementOffset += elementCountVector256;
-
                     if (elementOffset > oneVectorAwayFromEnd) break;
                 }
             }
             else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
             {
-               
+
             }
 
             // Non-SIMD scalar & tail handling:
             while (elementOffset < bufferLength)
             {
-                ref double scalar = ref Unsafe.Add(ref lon_searchSpace, elementOffset++);
-                scalar = double.DegreesToRadians(scalar);
+                ref double s_lat = ref Unsafe.Add(ref lat_searchSpace, elementOffset);
+                s_lat = WGS84_SemiMajorAxis * double.Atanh(double.Sin(double.DegreesToRadians(double.Clamp( s_lat, minLat, maxLat))));
+
+                ref double s_lon = ref Unsafe.Add(ref lon_searchSpace, elementOffset++);
+                s_lon = WGS84_SemiMajorAxis * double.DegreesToRadians(s_lon);
             }
         }
     }
