@@ -13,7 +13,7 @@ public static class GeoSIMD
     private const nuint elementCountVector512 = 8u;
     private const nuint elementCountVector256 = 4u;
     private const nuint elementCountVector128 = 2u;
-    
+
     private const double s1 = 0.9999999999999375599318186670190419967059614976305799594333d;
     private const double s2 = -0.1666666666643233145818157423824897486264256985983593141745d;
     private const double s3 = 0.0083333333187655140151317116116415304845125161193612244296d;
@@ -735,7 +735,7 @@ public static class GeoSIMD
     //    fixed (double* baseAddr = coords)
     //    {
 
-    //        if (Vector512.IsHardwareAccelerated && bufferLength >= elementCountVector512)
+    //        if (Vector512.IsHardwareAccelerated && bufferLength >= 2 * elementCountVector512)
     //        {
     //            Vector512<double> v_s1 = Vector512.Create<double>(s1);
     //            Vector512<double> v_s2 = Vector512.Create<double>(s2);
@@ -745,8 +745,8 @@ public static class GeoSIMD
     //            Vector512<double> v_s6 = Vector512.Create<double>(s6);
     //            Vector512<double> v_s7 = Vector512.Create<double>(s7);
 
-    //            Vector512<double> v_minLat = Vector512.Create<double>(minLat);
-    //            Vector512<double> v_maxLat = Vector512.Create<double>(maxLat);
+    //            Vector512<double> v_minLat = Vector512.Create<double>(webMercatorMinLat);
+    //            Vector512<double> v_maxLat = Vector512.Create<double>(webMercatorMaxLat);
     //            Vector512<double> v_one = Vector512<double>.One;
     //            Vector512<double> v_two = Vector512.Create<double>(2.0d);
 
@@ -755,11 +755,20 @@ public static class GeoSIMD
     //            Vector512<double> v_WGS84_HalfSemiMajorAxis = Vector512.Create<double>(WGS84_HalfSemiMajorAxis);
     //            Vector512<double> v_WGS84_SemiMajorAxis = Vector512.Create<double>(WGS84_SemiMajorAxis);
 
-    //            nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
+    //            Vector128<int> latIndex = coordinateOrder is CoordinateOrder.LatLon ?
+    //                                      Vector128.Create(0, 2, 4, 6) :
+    //                                      Vector128.Create(1, 3, 5, 7);
+    //            Vector128<int> lonIndex = coordinateOrder is CoordinateOrder.LatLon ?
+    //                                      Vector128.Create(1, 3, 5, 7) :
+    //                                      Vector128.Create(0, 2, 4, 6);
+
+    //            nuint oneVectorAwayFromEnd = bufferLength - 2 * elementCountVector512;
 
     //            while (true)
     //            {
-    //                Vector512<double> _lat = Vector512.LoadUnsafe(in lat_searchSpace, elementOffset);
+    //                Vector512<double> _lat = Vector512.Create(Avx2.GatherVector256(baseAddr+elementOffset, latIndex, 8), Avx2.GatherVector256(baseAddr +elementOffset + elementCountVector256, latIndex, 8));
+    //                Vector512<double> _lon = Vector512.Create(Avx2.GatherVector256(baseAddr+elementOffset, lonIndex, 8), Avx2.GatherVector256(baseAddr +elementOffset+ elementCountVector256, lonIndex, 8));
+
     //                _lat = v_degToRad * Vector512.Min(v_maxLat, Vector512.Max(v_minLat, _lat));
     //                Vector512<double> _lat2 = _lat * _lat;
 
@@ -779,136 +788,52 @@ public static class GeoSIMD
     //                (v_s4 + _lat2 *
     //                (v_s5 + _lat2 * (v_s6 + v_s7 * _lat2)))))) + v_one;
 
-    //                (v_WGS84_HalfSemiMajorAxis * Vector512.Log(_lat / (v_two - _lat)))
-    //                  .StoreUnsafe(ref lat_searchSpace, elementOffset);
+    //                _lat = (v_WGS84_HalfSemiMajorAxis * Vector512.Log(_lat / (v_two - _lat)));
+    //                _lon = (v_WGS84_SemiMajorAxis * (v_degToRad * _lon));
+    //                if(coordinateOrder is CoordinateOrder.LatLon)
+    //                {
 
-    //                (v_WGS84_SemiMajorAxis * (v_degToRad * Vector512.LoadUnsafe(in lon_searchSpace, elementOffset)))
-    //                    .StoreUnsafe(ref lon_searchSpace, elementOffset);
+    //                    Vector512.ConditionalSelect<double>(Vector512.Create(double.NaN, 0, double.NaN, 0, double.NaN, 0, double.NaN, 0), _lat, _lon)
+    //                        .Store(baseAddr + elementOffset);
+    //                    Vector512.ConditionalSelect<double>(Vector512.Create(double.NaN, 0, double.NaN, 0, double.NaN, 0, double.NaN, 0), _lat, _lon)
+    //                    .Store(baseAddr + elementOffset + elementCountVector512);
+    //                }
 
-    //                elementOffset += elementCountVector512;
+    //                elementOffset += 2 * elementCountVector512;
     //                if (elementOffset > oneVectorAwayFromEnd) break;
     //            }
     //        }
-    //        else if (Vector256.IsHardwareAccelerated && bufferLength >= elementCountVector256)
+
+    //        // Non - SIMD scalar & tail handling:
+
+    //        if (coordinateOrder is CoordinateOrder.LatLon)
     //        {
-    //            Vector256<double> v_s1 = Vector256.Create<double>(s1);
-    //            Vector256<double> v_s2 = Vector256.Create<double>(s2);
-    //            Vector256<double> v_s3 = Vector256.Create<double>(s3);
-    //            Vector256<double> v_s4 = Vector256.Create<double>(s4);
-    //            Vector256<double> v_s5 = Vector256.Create<double>(s5);
-    //            Vector256<double> v_s6 = Vector256.Create<double>(s6);
-    //            Vector256<double> v_s7 = Vector256.Create<double>(s7);
-
-    //            Vector256<double> v_minLat = Vector256.Create<double>(minLat);
-    //            Vector256<double> v_maxLat = Vector256.Create<double>(maxLat);
-    //            Vector256<double> v_one = Vector256<double>.One;
-    //            Vector256<double> v_two = Vector256.Create<double>(2.0d);
-
-    //            Vector256<double> v_degToRad = Vector256.Create<double>(degToRad);
-
-    //            Vector256<double> v_WGS84_HalfSemiMajorAxis = Vector256.Create<double>(WGS84_HalfSemiMajorAxis);
-    //            Vector256<double> v_WGS84_SemiMajorAxis = Vector256.Create<double>(WGS84_SemiMajorAxis);
-
-    //            nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
-
-    //            while (true)
+    //            while (elementOffset < bufferLength)
     //            {
-    //                Vector256<double> _lat = Vector256.LoadUnsafe(in lat_searchSpace, elementOffset);
-    //                _lat = v_degToRad * Vector256.Min(v_maxLat, Vector256.Max(v_minLat, _lat));
-    //                Vector256<double> _lat2 = _lat * _lat;
-
-    //                _lat = Fma.IsSupported ?
-    //                       Fma.MultiplyAdd(_lat,
-    //                       Fma.MultiplyAdd(_lat2,
-    //                       Fma.MultiplyAdd(_lat2,
-    //                       Fma.MultiplyAdd(_lat2,
-    //                       Fma.MultiplyAdd(_lat2,
-    //                       Fma.MultiplyAdd(_lat2,
-    //                       Fma.MultiplyAdd(v_s7, _lat2, v_s6), v_s5), v_s4), v_s3), v_s2), v_s1), v_one)
-    //                :
-    //                       _lat *
-    //                      (v_s1 + _lat2 *
-    //                      (v_s2 + _lat2 *
-    //                      (v_s3 + _lat2 *
-    //                      (v_s4 + _lat2 *
-    //                      (v_s5 + _lat2 * (v_s6 + v_s7 * _lat2)))))) + v_one;
-
-    //                (v_WGS84_HalfSemiMajorAxis * Vector256.Log(_lat / (v_two - _lat)))
-    //                  .StoreUnsafe(ref lat_searchSpace, elementOffset);
-
-    //                (v_WGS84_SemiMajorAxis * (v_degToRad * Vector256.LoadUnsafe(in lon_searchSpace, elementOffset)))
-    //                    .StoreUnsafe(ref lon_searchSpace, elementOffset);
-
-    //                elementOffset += elementCountVector256;
-    //                if (elementOffset > oneVectorAwayFromEnd) break;
-    //            }
-    //        }
-    //        else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
-    //        {
-    //            Vector128<double> v_s1 = Vector128.Create<double>(s1);
-    //            Vector128<double> v_s2 = Vector128.Create<double>(s2);
-    //            Vector128<double> v_s3 = Vector128.Create<double>(s3);
-    //            Vector128<double> v_s4 = Vector128.Create<double>(s4);
-    //            Vector128<double> v_s5 = Vector128.Create<double>(s5);
-    //            Vector128<double> v_s6 = Vector128.Create<double>(s6);
-    //            Vector128<double> v_s7 = Vector128.Create<double>(s7);
-
-    //            Vector128<double> v_minLat = Vector128.Create<double>(minLat);
-    //            Vector128<double> v_maxLat = Vector128.Create<double>(maxLat);
-    //            Vector128<double> v_one = Vector128<double>.One;
-    //            Vector128<double> v_two = Vector128.Create<double>(2.0d);
-
-    //            Vector128<double> v_degToRad = Vector128.Create<double>(degToRad);
-
-    //            Vector128<double> v_WGS84_HalfSemiMajorAxis = Vector128.Create<double>(WGS84_HalfSemiMajorAxis);
-    //            Vector128<double> v_WGS84_SemiMajorAxis = Vector128.Create<double>(WGS84_SemiMajorAxis);
-
-    //            nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
-
-    //            while (true)
-    //            {
-    //                Vector128<double> _lat = Vector128.LoadUnsafe(in lat_searchSpace, elementOffset);
-    //                _lat = v_degToRad * Vector128.Min(v_maxLat, Vector128.Max(v_minLat, _lat));
-    //                Vector128<double> _lat2 = _lat * _lat;
-
-    //                _lat = Fma.IsSupported ?
-    //                Fma.MultiplyAdd(_lat,
-    //                    Fma.MultiplyAdd(_lat2,
-    //                    Fma.MultiplyAdd(_lat2,
-    //                    Fma.MultiplyAdd(_lat2,
-    //                    Fma.MultiplyAdd(_lat2,
-    //                    Fma.MultiplyAdd(_lat2,
-    //                    Fma.MultiplyAdd(v_s7, _lat2, v_s6), v_s5), v_s4), v_s3), v_s2), v_s1), v_one)
-    //            :
-    //                _lat *
-    //                (v_s1 + _lat2 *
-    //                (v_s2 + _lat2 *
-    //                (v_s3 + _lat2 *
-    //                (v_s4 + _lat2 *
-    //                (v_s5 + _lat2 * (v_s6 + v_s7 * _lat2)))))) + v_one;
-
-    //                (v_WGS84_HalfSemiMajorAxis * Vector128.Log(_lat / (v_two - _lat)))
-    //                  .StoreUnsafe(ref lat_searchSpace, elementOffset);
-
-    //                (v_WGS84_SemiMajorAxis * (v_degToRad * Vector128.LoadUnsafe(in lon_searchSpace, elementOffset)))
-    //                    .StoreUnsafe(ref lon_searchSpace, elementOffset);
-
-    //                elementOffset += elementCountVector128;
-    //                if (elementOffset > oneVectorAwayFromEnd) break;
-    //            }
-    //        }
-
-    //         Non-SIMD scalar & tail handling:
-    //        while (elementOffset < bufferLength)
-    //        {
-    //            ref double s_lat = ref Unsafe.Add(ref lat_searchSpace, elementOffset);
-    //            s_lat = WGS84_SemiMajorAxis * double.Atanh(
+    //                var address = baseAddr + elementOffset;
+    //                *address = WGS84_SemiMajorAxis * double.Atanh(
     //                double.Sin(double.DegreesToRadians(
-    //                    double.Clamp(s_lat, minLat, maxLat))));
+    //                    double.Clamp(*address, webMercatorMinLat, webMercatorMaxLat))));
+    //                ++address;
+    //                *address = WGS84_SemiMajorAxis * double.DegreesToRadians(*address);
+    //                elementOffset += 2;
+    //            }
+    //        }
+    //        else
+    //        {
+    //            while (elementOffset < bufferLength)
+    //            {
+    //                var address = baseAddr + elementOffset;
+    //                *address = WGS84_SemiMajorAxis * double.DegreesToRadians(*address);
 
-    //            ref double s_lon = ref Unsafe.Add(ref lon_searchSpace, elementOffset++);
-    //            s_lon = WGS84_SemiMajorAxis * double.DegreesToRadians(s_lon);
+    //                ++address;
+    //                *address = WGS84_SemiMajorAxis * double.Atanh(
+    //                double.Sin(double.DegreesToRadians(
+    //                    double.Clamp(*address, webMercatorMinLat, webMercatorMaxLat))));
+    //                elementOffset += 2;
+    //            }
     //        }
     //    }
     //}
+
 }
