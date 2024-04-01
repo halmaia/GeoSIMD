@@ -1,4 +1,6 @@
-﻿using System.Runtime.CompilerServices;
+﻿// Written by Ákos Halmai, 2024.
+
+using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
 using System.Runtime.Intrinsics.Arm;
