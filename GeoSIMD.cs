@@ -308,9 +308,15 @@ public static class GeoSIMD
     {
         int len = x.Length;
         return len != y.Length
-            ? throw new IndexOutOfRangeException("Asymmetric vertex count.")
-            : len < 3 ? throw new ArgumentException("There is no enough vertex to be closed.")
+            ? ThrowAssymetricVertexCount()
+            : len < 3 ? ThrowNotEnoughVertex()
             : (x[--len] == x[0]) && (y[len] == y[0]);
+
+        static bool ThrowAssymetricVertexCount() =>
+            throw new IndexOutOfRangeException("Asymmetric vertex count.");
+
+        static bool ThrowNotEnoughVertex() =>
+         throw new ArgumentException("There is no enough vertex to be closed.");
     }
 
     [SkipLocalsInit]
@@ -348,11 +354,11 @@ public static class GeoSIMD
         const nuint elementCountVector256 = 4u;
         const nuint elementCountVector128 = 2u;
 
+        ref readonly double searchSpace = ref buffer.GetPinnableReference();
+
         // Vector512/256/128.IsHardwareAccelerated is a compilation time constant.
         if (Vector512.IsHardwareAccelerated && bufferLength >= elementCountVector512)
         {
-
-            ref readonly double searchSpace = ref buffer.GetPinnableReference();
             Vector512<double> min512 = Vector512.LoadUnsafe(in searchSpace);
             nuint elementOffset = elementCountVector512;
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
@@ -372,11 +378,9 @@ public static class GeoSIMD
             Vector128<double> min128 = Vector128.Min(min256.GetLower(), min256.GetUpper());
             double right = min128[1], left = min128[0];
             return left < right ? left : right;
-
         }
         else if (Vector256.IsHardwareAccelerated && bufferLength >= elementCountVector256)
         {
-            ref readonly double searchSpace = ref buffer.GetPinnableReference();
             Vector256<double> min256 = Vector256.LoadUnsafe(in searchSpace);
             nuint elementOffset = elementCountVector256;
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
@@ -397,8 +401,6 @@ public static class GeoSIMD
         }
         else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
         {
-
-            ref readonly double searchSpace = ref buffer.GetPinnableReference();
             Vector128<double> min128 = Vector128.LoadUnsafe(in searchSpace);
             nuint elementOffset = elementCountVector128;
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
@@ -422,10 +424,8 @@ public static class GeoSIMD
         for (int i = 1; i < (int)bufferLength;)
         {
             double current = buffer[i++];
-            if (min > current)
-            {
+            if (current < min)
                 min = current;
-            }
         }
         return min;
     }
