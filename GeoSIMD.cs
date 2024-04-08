@@ -1,5 +1,6 @@
 ﻿// Written by Ákos Halmai, 2024.
 
+using System.Diagnostics.CodeAnalysis;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using System.Runtime.Intrinsics;
@@ -172,6 +173,7 @@ public static class GeoSIMD
         {
             ThrowNotClosedPolygon();
 
+            [DoesNotReturn]
             static void ThrowNotClosedPolygon() =>
                 throw new Exception("The provided polygon is not closed.");
         }
@@ -186,7 +188,13 @@ public static class GeoSIMD
     {
         nuint bufferLength = (nuint)x.Length;
         if (bufferLength < 4 || bufferLength != (nuint)y.Length)
-            throw new IndexOutOfRangeException("Invalid vertex count.");
+        {
+            ThrowInvalidVertexCount();
+
+            [DoesNotReturn]
+            static void ThrowInvalidVertexCount() => 
+                throw new IndexOutOfRangeException("Invalid vertex count.");
+        }
 
         nuint elementOffset = 0u;
         double vectorSum = 0d;
@@ -216,7 +224,8 @@ public static class GeoSIMD
                     Vector512.LoadUnsafe(in searchSpaceY, elementOffset);
                 }
                 elementOffset += elementCountVector512;
-                if (elementOffset > oneVectorAwayFromEnd) break;
+                if (elementOffset > oneVectorAwayFromEnd) 
+                    break;
             }
             vectorSum = Vector512.Sum(.5d * area512);
         }
@@ -312,9 +321,11 @@ public static class GeoSIMD
             : len < 3 ? ThrowNotEnoughVertex()
             : (x[--len] == x[0]) && (y[len] == y[0]);
 
+        [DoesNotReturn]
         static bool ThrowAssymetricVertexCount() =>
             throw new IndexOutOfRangeException("Asymmetric vertex count.");
 
+        [DoesNotReturn]
         static bool ThrowNotEnoughVertex() =>
          throw new ArgumentException("There is no enough vertex to be closed.");
     }
@@ -328,7 +339,13 @@ public static class GeoSIMD
             int len = x.Length;
             // If we already on the maximum size, unable to increase:
             if (len == Array.MaxLength)
-                throw new IndexOutOfRangeException("The number of elements is too big, to allocate a new element.");
+            {
+                ThrowArrayTooBig();
+
+                [DoesNotReturn]
+                static void ThrowArrayTooBig() =>
+                  throw new IndexOutOfRangeException("The number of elements is too big, to allocate a new element.");
+            }
 
             Span<double> new_x = GC.AllocateUninitializedArray<double>(++len);
             x.CopyTo(new_x);
@@ -345,14 +362,20 @@ public static class GeoSIMD
 
     public static double Min(ReadOnlySpan<double> buffer)
     {
-        if (buffer.IsEmpty) throw new ArgumentException("Empty span provided.", nameof(buffer));
-
         nuint bufferLength = (nuint)buffer.Length;
-        if (bufferLength is 1) return buffer[0];
+        if (bufferLength is 0)
+        {
+            ThrowEmptySpan();
 
-        const nuint elementCountVector512 = 8u;
-        const nuint elementCountVector256 = 4u;
-        const nuint elementCountVector128 = 2u;
+            [DoesNotReturn]
+            static void ThrowEmptySpan() =>
+                throw new ArgumentException("Empty span provided.", nameof(buffer));
+        }
+
+        if (bufferLength is 1)
+        {
+            return buffer[0];
+        }
 
         ref readonly double searchSpace = ref buffer.GetPinnableReference();
 
@@ -425,7 +448,7 @@ public static class GeoSIMD
         {
             double current = buffer[i++];
             if (current < min)
-                min = current;
+            { min = current; }
         }
         return min;
     }
