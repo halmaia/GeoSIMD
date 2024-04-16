@@ -42,13 +42,13 @@ public static class GeoSIMD
         {
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
 
-            Vector512<double> C180 = Vector512.Create(180.0d);
-            Vector512<double> PI = Vector512.Create(double.Pi);
+            Vector512<double> C180 = Vector512.Create(180.0d),
+                              Pi = Vector512.Create(double.Pi);
 
             while (true)
             {
-                (PI * Vector512.LoadUnsafe(in searchSpace, elementOffset) / C180)
-                               .StoreUnsafe(ref searchSpace, elementOffset);
+                ((Vector512.LoadUnsafe(in searchSpace, elementOffset)) * Pi / C180)
+                                .StoreUnsafe(ref searchSpace, elementOffset);
 
                 elementOffset += elementCountVector512;
                 if (elementOffset > oneVectorAwayFromEnd) break;
@@ -58,21 +58,15 @@ public static class GeoSIMD
         {
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
 
-            Vector256<double> C180 = Vector256.Create(180.0d);
-            Vector256<double> PI = Vector256.Create(double.Pi);
-
-            // According to BenchmarkDotNet's measurement there is no
-            // measurable benefit to un-roll the while loop.
+            Vector256<double> C180 = Vector256.Create(180.0d),
+                              Pi = Vector256.Create(double.Pi);
 
             while (true)
             {
-                (PI * Vector256.LoadUnsafe(in searchSpace, elementOffset) / C180)
-                               .StoreUnsafe(ref searchSpace, elementOffset);
+                ((Vector256.LoadUnsafe(in searchSpace, elementOffset)) * Pi / C180)
+                             .StoreUnsafe(ref searchSpace, elementOffset);
 
                 elementOffset += elementCountVector256;
-
-                // If I rewrite this loop to a do ... while I get the same
-                // compilation result as now:
                 if (elementOffset > oneVectorAwayFromEnd) break;
             }
         }
@@ -80,12 +74,12 @@ public static class GeoSIMD
         {
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
 
-            Vector128<double> C180 = Vector128.Create(180.0d);
-            Vector128<double> PI = Vector128.Create(double.Pi);
+            Vector128<double> C180 = Vector128.Create(180.0d),
+                              Pi = Vector128.Create(double.Pi);
 
             while (true)
             {
-                (PI * Vector128.LoadUnsafe(in searchSpace, elementOffset) / C180)
+                ((Vector128.LoadUnsafe(in searchSpace, elementOffset)) * Pi / C180)
                                .StoreUnsafe(ref searchSpace, elementOffset);
 
                 elementOffset += elementCountVector128;
@@ -104,12 +98,11 @@ public static class GeoSIMD
     [SkipLocalsInit]
     public static Span<double> DegreesToRadians(ReadOnlySpan<double> radians)
     {
+        nuint bufferLength;
         nuint elementOffset = 0u;
 
         ref readonly double inputSpace = ref radians.GetPinnableReference();
-
-        nuint bufferLength = (nuint)radians.Length;
-        Span<double> output = GC.AllocateUninitializedArray<double>(radians.Length);
+        Span<double> output = GC.AllocateUninitializedArray<double>((int)(bufferLength = (nuint)radians.Length));
         ref double outputSpace = ref MemoryMarshal.GetReference(output);
 
         // Vector512/256/128.IsHardwareAccelerated is a compilation time constant.
@@ -121,8 +114,9 @@ public static class GeoSIMD
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector512;
             while (true)
             {
-                (PI * Vector512.LoadUnsafe(in inputSpace, elementOffset) / C180)
-                        .StoreUnsafe(ref outputSpace, elementOffset);
+                ((Vector512.LoadUnsafe(in inputSpace, elementOffset) * PI) / C180)
+                               .StoreUnsafe(ref outputSpace, elementOffset);
+
                 elementOffset += elementCountVector512;
                 if (elementOffset > oneVectorAwayFromEnd) break;
             }
@@ -135,9 +129,11 @@ public static class GeoSIMD
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector256;
             while (elementOffset <= oneVectorAwayFromEnd)
             {
-                (PI * Vector256.LoadUnsafe(in inputSpace, elementOffset) / C180)
-                        .StoreUnsafe(ref outputSpace, elementOffset);
+                ((Vector256.LoadUnsafe(in inputSpace, elementOffset) * PI) / C180)
+                               .StoreUnsafe(ref outputSpace, elementOffset);
+
                 elementOffset += elementCountVector256;
+                if (elementOffset > oneVectorAwayFromEnd) break;
             }
         }
         else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
@@ -148,8 +144,8 @@ public static class GeoSIMD
             nuint oneVectorAwayFromEnd = bufferLength - elementCountVector128;
             while (true)
             {
-                (PI * Vector128.LoadUnsafe(in inputSpace, elementOffset) / C180)
-                        .StoreUnsafe(ref outputSpace, elementOffset);
+                ((Vector128.LoadUnsafe(in inputSpace, elementOffset) * PI) / C180)
+                               .StoreUnsafe(ref outputSpace, elementOffset);
 
                 elementOffset += elementCountVector128;
                 if (elementOffset > oneVectorAwayFromEnd) break;
@@ -157,10 +153,14 @@ public static class GeoSIMD
         }
 
         // Non-SIMD scalar & tail handling:
-        while (elementOffset < bufferLength)
+        if (elementOffset < bufferLength)
         {
-            ref double scalar = ref Unsafe.Add(ref outputSpace, elementOffset++);
-            scalar = double.DegreesToRadians(scalar);
+            int i = (int)elementOffset, len = (int)bufferLength;
+            while (true)
+            {
+                output[i] = double.DegreesToRadians(radians[i]);
+                if (++i == len) break;
+            }
         }
         return output;
     }
@@ -192,7 +192,7 @@ public static class GeoSIMD
             ThrowInvalidVertexCount();
 
             [DoesNotReturn]
-            static void ThrowInvalidVertexCount() => 
+            static void ThrowInvalidVertexCount() =>
                 throw new IndexOutOfRangeException("Invalid vertex count.");
         }
 
@@ -224,7 +224,7 @@ public static class GeoSIMD
                     Vector512.LoadUnsafe(in searchSpaceY, elementOffset);
                 }
                 elementOffset += elementCountVector512;
-                if (elementOffset > oneVectorAwayFromEnd) 
+                if (elementOffset > oneVectorAwayFromEnd)
                     break;
             }
             vectorSum = Vector512.Sum(.5d * area512);
@@ -399,8 +399,7 @@ public static class GeoSIMD
 
             Vector256<double> min256 = Vector256.Min(min512.GetLower(), min512.GetUpper());
             Vector128<double> min128 = Vector128.Min(min256.GetLower(), min256.GetUpper());
-            double right = min128[1], left = min128[0];
-            return left < right ? left : right;
+            return double.Min(min128[1], min128[0]);
         }
         else if (Vector256.IsHardwareAccelerated && bufferLength >= elementCountVector256)
         {
@@ -419,8 +418,7 @@ public static class GeoSIMD
             }
 
             Vector128<double> min128 = Vector128.Min(min256.GetLower(), min256.GetUpper());
-            double right = min128[1], left = min128[0];
-            return left < right ? left : right;
+            return double.Min(min128[1], min128[0]);
         }
         else if (Vector128.IsHardwareAccelerated && bufferLength >= elementCountVector128)
         {
@@ -438,13 +436,12 @@ public static class GeoSIMD
                 min128 = Vector128.Min(min128, Vector128.LoadUnsafe(in searchSpace, oneVectorAwayFromEnd));
             }
 
-            double right = min128[1], left = min128[0];
-            return left < right ? left : right;
+            return double.Min(min128[1], min128[0]);
         }
 
         // Non-SIMD scalar handling:
         double min = buffer[0];
-        for (int i = 1; i < (int)bufferLength;)
+        for (int i = 1, len = (int)bufferLength; i < len;)
         {
             double current = buffer[i++];
             if (current < min)
